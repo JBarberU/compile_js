@@ -1,4 +1,4 @@
-# battery-term
+# compile_js 
 
 compile_js is a commandline utility for traversing and merging javascript files 
 used with UIAutomation for iOS. It's useful if you mainly use instruments 

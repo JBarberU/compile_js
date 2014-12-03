@@ -1,0 +1,128 @@
+#!/bin/bash
+
+TMP_FILE="/tmp/compile_js.tmp";
+DEBUG="/tmp/compile_js.log";
+
+function print_help {
+local MSG="
+compile_js is a commandline utility for traversing and merging javascript files 
+used with UIAutomation for iOS. It's useful if you mainly use instruments 
+through the commandline and use a lot of libraries, but also want an easy way to 
+use the Instruments.app for debugging/recording. The main reason this utility 
+exists is the clunky way Instruments.app handles file includes...
+
+compile_js traverses the selected files and resolves the non-standard #imports 
+to recurse through all the dependencies.
+
+Usage: 
+	-i The input files to compile (directory or javascript file)
+	-o The name of the output file (the given file will be overwritten)
+	-h This help page
+
+Examples:
+
+	$ compile -i js/helpers -o instr.js
+	$ compile -i js/helpers -i /js/lang-ext -o instr.js
+	$ compile -i js/helpers -i /js/lang-ext/string.js -o instr.js
+";
+	echo "$MSG";
+}
+
+function log {
+	printf "$1\n" >> "$DEBUG"
+}
+
+function recurse_file {
+	if [ $(echo "$1" | grep -e ".*\.js.*") ]; then
+		inspect_js "$1";
+	fi
+}
+
+function recurse_dir {
+	for e in $(ls "$1"); do
+		local entry="$1/$e";
+		if [ -f "$entry" ]; then
+			recurse_file "$entry";
+		elif [ -d "$entry" ]; then
+			recurse_dir "$entry";
+		else
+			echo "$entry is of unknown file type";
+		fi
+	done
+}
+
+# @param $1 The file to parse
+# @param $2 The parent (javascript that included the file)
+function inspect_js {
+	local dotdot_regex='s,/[^/]*/\.\./,/,g'
+	local loc_path="$(echo $1 | sed $dotdot_regex)"
+	local parent="root";
+	if [ $2 ]; then
+		parent="$2";
+	fi
+
+	if [ $(cat "$TMP_FILE" | grep "$loc_path") ]; then
+		return;
+	else
+		echo "$loc_path" >> "$TMP_FILE";
+	fi
+
+	grep '#import' "$loc_path" | \
+	while read key value; do
+		local include_path="$(echo $(dirname $loc_path)/$value | sed 's,[\",;],,g' | sed $dotdot_regex)"
+		inspect_js "$include_path" "$loc_path"
+	done
+
+	echo "/******************************************************************************/" >> "$RESULT";
+	echo "// Imported $loc_path from $parent " >> "$RESULT"
+	echo "/******************************************************************************/" >> "$RESULT";
+	cat "$loc_path" | sed 's,#import,// #import,g' >> "$RESULT"
+
+	printf ".";
+}
+
+FORCE=false;
+while getopts ho:i: option 
+do
+	case ${option} in 
+		o) RESULT="$OPTARG";;
+		i) INPUT="$INPUT $OPTARG";;
+		h) print_help; exit;;
+	esac
+done
+
+if ! [[ $INPUT && $RESULT ]]; then
+	echo "Both imput and output must be provided (use -i {option} and -o {option} for that)" >&2;
+	exit 1;
+fi
+
+# Setup
+printf "" > "$TMP_FILE";
+printf "" > "$RESULT";
+printf "" > "$DEBUG";
+
+if ( ! $FORCE ); then
+	printf "Using $INPUT as input and $RESULT as output, proceed? [Y/N]: ";
+	read ANS;
+	case ${ANS} in	
+		Y|y) echo "Proceding";;
+		*) echo "Aborting"; exit;;
+	esac
+fi
+
+# Run the program
+printf "Compiling";
+
+for i in $INPUT; do
+	if [ -d $i ]; then
+		recurse_dir "$i";
+	elif [ -f $i ]; then
+		recurse_file "$i";
+	else
+		echo "$i is neither a file nor directory" >&2;
+	fi
+done
+
+printf "Done!\n";
+log "$(cat $TMP_FILE | sed 's,:,\\n,g')";
+

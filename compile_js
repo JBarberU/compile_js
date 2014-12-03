@@ -81,7 +81,6 @@ function inspect_js {
 	printf ".";
 }
 
-FORCE=false;
 while getopts ho:i: option 
 do
 	case ${option} in 
@@ -100,15 +99,6 @@ fi
 printf "" > "$TMP_FILE";
 printf "" > "$RESULT";
 printf "" > "$DEBUG";
-
-if ( ! $FORCE ); then
-	printf "Using $INPUT as input and $RESULT as output, proceed? [Y/N]: ";
-	read ANS;
-	case ${ANS} in	
-		Y|y) echo "Proceding";;
-		*) echo "Aborting"; exit;;
-	esac
-fi
 
 # Run the program
 printf "Compiling";
